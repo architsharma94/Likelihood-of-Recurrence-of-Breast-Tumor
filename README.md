@@ -31,7 +31,7 @@ In the next stage, we will further inspect the relations between the target vari
 
 ### Repository guide for Phase 2:
 * Data => Data - Phase 2.csv
-* Raw Report (rMarkdown) => Phase 2.R
+* Raw Report (rMarkdown) => Phase 2.rmd
 * Compiled Report => Phase 2 (Code and report compiled).html 
 
 ### Introduction
