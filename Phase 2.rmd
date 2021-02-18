@@ -1,0 +1,676 @@
+---
+title: "Project Phase 2"
+author: "Aditi, Neha, Archit"
+date: "11/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Likelihood of Recurrence of Breast Tumor**
+
+
+**Table of Contents**
+
+* 1.	Introduction  
+  + 1.1 Methodology  
+* 2.	Statistical Modelling  
+  + 2.1.	Model Fitting  
+  + 2.1.1 Manual Method  
+  + 2.1.2 Model Selection using Feature selection  
+  + 2.2 Model Evaluation  
+  + 2.2.1 Comparing Predictions of Candidate Models  
+  + 2.2.2 Residual Analysis  
+  + 2.2.3 Response Analysis  
+  + 2.2.4 Goodness of Fit  
+  + 2.2.5 Confidence Intervals  
+  + 2.2.6 Hypothesis Tests  
+  + 2.2.7 Sensitivity Analysis  
+* 3. Critique & Limitations  
+* 4. Summary & Conclusions  
+
+
+
+
+# 1. Introduction
+The aim of this project is to predict the recurrence of breast tumor in females based on the malignancy-related information of 286 patients. An early warning or knowing which biological factors may lead to a reappearance of malignancy of breast tumor, can help doctors to provide preventive measures and treatment effectively. Moreover, the patient may have a better fighting chance with early detection.
+In phase 1, exploratory data analysis was performed, and the data was cleaned. The different relationships between the various biological features were explored.
+
+## 1.1 Methodology
+In this second phase of the analysis, statistical modelling was done over the pre-processed data. A logistic regression model was created to investigate the probability of recurrence of breast tumor. The response variable is binary, and the dataset also contains category explanatory variables and therefore, logistic regression is the method undertaken in this project. The event of recurrence of malignancy is the target variable, with ‘r’ referring to cases showing reappearance and ‘n’ showing no recurrence. 9 features describing the various factors such as irradiation, degree of malignancy the first time, are all used to build the logistic regression model. Significant predictors are found, and the odds of recurrence are compared with the different levels of the same predictor. The analysis is done using R programming language.
+
+
+```{r, include=FALSE}
+library("dplyr")
+library("readr")
+library("glmulti")
+library("leaps")
+library("car")
+library("mlr")
+
+#Reading dataset into R
+data = read.table(file = "Data - Phase 2.csv", header = TRUE, sep = ",")
+```
+
+# 2.	Statistical Modelling
+
+
+
+```{r, include = FALSE}
+#Displaying variable names
+colnames(data)
+
+#Handling the issues with variable names
+names(data)[names(data) == "ï..age"] <- "age"
+
+#Rearranging columns in the dataframe
+data <- data[c(1:8,10,9)]
+
+#Converting columns into factors as per requirements
+data$menopause = factor(data$menopause, levels= c("premenopausal", ">=40", "<40"))
+data$tumor.cd = factor(data$tumor.cd, levels= c("Tumor size < mean (P)", "Tumor size > mean (N)"))
+data$node.caps = factor(data$node.caps)
+data$deg.malig = factor(data$deg.malig, levels= c("Grade1:Low", "Grade2:Intermediate", "Grade3:High"))
+data$breast = factor(data$breast)
+data$breast.quad = factor(data$breast.quad)
+data$irradiation = factor(data$irradiation)
+data$recurrence = factor(data$recurrence)
+
+```
+
+Here, the aim is to look for the best logistic regression model.
+A look at the data summary in the below figure 1 shows that there are 9 independent variables with ’age’ and ‘inv-nodes’ as numeric features and the rest are categorical variables. The number of levels or categories for each feature is mentioned. The dataset was pre-processed in phase 1 and has no missing values.  
+
+```{r}
+#Overview of the cleaned dataset
+summarizeColumns(data) %>% select(-disp, -mad) %>%
+  knitr::kable(caption = "Figure 1: Data Summary")
+```
+
+For performing logistic regression, all the categorical variables were first converted to numeric. The target feature was converted to binary form with 1 as cases showing recurrence and 0 cases of non-recurrence.  
+
+```{r}
+#Converting factor data into numeric for logistic regression
+
+data <- data %>% mutate_if(sapply(data, is.factor), as.integer) 
+data$recurrence <-  data$recurrence-1
+sum(is.na(data))
+
+```
+
+**Hypothesis Test**  
+
+To have an overview of the highly dependent variables, hypothesis test of independence was performed. With p-value less than 0.05, gives evidence of dependency and the test is statistically significant. This will help deciding the interaction terms.
+
+
+```{r, include=FALSE}
+## Hypothesis Test
+head(data)
+
+test <- data.frame(matrix(ncol = 8 , nrow = 7))
+x <- c("Variable", "menopause", "node-caps", "deg-malig", "breast", "breast-quad", "irradiation","tumor-cd" )
+colnames(test) <- x
+test["Variable"] <-c( "menopause", "node-caps", "deg-malig", "breast", "breast-quad", "irradiation","tumor-cd" )
+
+#summary(xtabs(formula = recurrence ~ menopause + age,data = data))$p.value
+#meno
+test[1,2]<- c("-")
+test[1,3]<-round(summary(xtabs(formula = recurrence ~ menopause + node.caps,data = data))$p.value, 3)
+test[1,4]<-round(summary(xtabs(formula = recurrence ~ menopause + deg.malig,data = data))$p.value, 3)
+test[1,5]<-round(summary(xtabs(formula = recurrence ~ menopause + breast,data = data))$p.value, 3)
+test[1,6]<-round(summary(xtabs(formula = recurrence ~ menopause + breast.quad,data = data))$p.value, 3)
+test[1,7]<-round(summary(xtabs(formula = recurrence ~ menopause + irradiation,data = data))$p.value, 3)
+test[1,8]<-round(summary(xtabs(formula = recurrence ~ menopause + tumor.cd,data = data))$p.value, 3)
+
+
+test[2,2]<-round(summary(xtabs(formula = recurrence ~ menopause + node.caps,data = data))$p.value, 3)
+test[3,2]<-round(summary(xtabs(formula = recurrence ~ menopause + deg.malig,data = data))$p.value, 3)
+test[4,2]<-round(summary(xtabs(formula = recurrence ~ menopause + breast,data = data))$p.value, 3)
+test[5,2]<-round(summary(xtabs(formula = recurrence ~ menopause + breast.quad,data = data))$p.value, 3)
+test[6,2]<-round(summary(xtabs(formula = recurrence ~ menopause + irradiation,data = data))$p.value, 3)
+test[7,2]<-round(summary(xtabs(formula = recurrence ~ menopause + tumor.cd,data = data))$p.value, 3)
+
+#nodecaps
+test[2,3]<- c("-")
+test[2,4]<-round(summary(xtabs(formula = recurrence ~ node.caps + deg.malig,data = data))$p.value, 3)
+test[2,5]<-round(summary(xtabs(formula = recurrence ~ node.caps + breast,data = data))$p.value, 3)
+test[2,6]<-round(summary(xtabs(formula = recurrence ~ node.caps + breast.quad,data = data))$p.value, 3)
+test[2,7]<-round(summary(xtabs(formula = recurrence ~ node.caps + irradiation,data = data))$p.value, 3)
+test[2,8]<-round(summary(xtabs(formula = recurrence ~ node.caps + tumor.cd,data = data))$p.value, 3)
+
+
+
+test[3,3]<-round(summary(xtabs(formula = recurrence ~ node.caps + deg.malig,data = data))$p.value, 3)
+test[4,3]<-round(summary(xtabs(formula = recurrence ~ node.caps + breast,data = data))$p.value, 3)
+test[5,3]<-round(summary(xtabs(formula = recurrence ~ node.caps + breast.quad,data = data))$p.value, 3)
+test[6,3]<-round(summary(xtabs(formula = recurrence ~ node.caps + irradiation,data = data))$p.value, 3)
+test[7,3]<-round(summary(xtabs(formula = recurrence ~ node.caps + tumor.cd,data = data))$p.value, 3)
+
+# deg malig
+test[3,4]<- c("-")
+test[3,5]<-round(summary(xtabs(formula = recurrence ~ deg.malig + breast,data = data))$p.value, 3)
+test[3,6]<-round(summary(xtabs(formula = recurrence ~ deg.malig + breast.quad,data = data))$p.value, 3)
+test[3,7]<-round(summary(xtabs(formula = recurrence ~ deg.malig + irradiation,data = data))$p.value, 3)
+test[3,8]<-round(summary(xtabs(formula = recurrence ~ deg.malig + tumor.cd,data = data))$p.value, 3)
+
+
+
+test[4,4]<-round(summary(xtabs(formula = recurrence ~ deg.malig + breast,data = data))$p.value, 3)
+test[5,4]<-round(summary(xtabs(formula = recurrence ~ deg.malig + breast.quad,data = data))$p.value, 3)
+test[6,4]<-round(summary(xtabs(formula = recurrence ~ deg.malig + irradiation,data = data))$p.value, 3)
+test[7,4]<-round(summary(xtabs(formula = recurrence ~ deg.malig + tumor.cd,data = data))$p.value, 3)
+
+
+
+# breast
+test[4,5]<- c("-")
+test[4,6]<-round(summary(xtabs(formula = recurrence ~ breast + breast.quad,data = data))$p.value, 3)
+test[4,7]<-round(summary(xtabs(formula = recurrence ~ breast + irradiation,data = data))$p.value, 3)
+test[4,8]<-round(summary(xtabs(formula = recurrence ~ breast + tumor.cd,data = data))$p.value, 3)
+
+test[5,5]<-round(summary(xtabs(formula = recurrence ~ breast + breast.quad,data = data))$p.value, 3)
+test[6,5]<-round(summary(xtabs(formula = recurrence ~ breast + irradiation,data = data))$p.value, 3)
+test[7,5]<-round(summary(xtabs(formula = recurrence ~ breast + tumor.cd,data = data))$p.value, 3)
+
+# breast.quad
+test[5,6]<- c("-")
+test[5,7]<-round(summary(xtabs(formula = recurrence ~ breast.quad + irradiation,data = data))$p.value, 3)
+test[5,8]<-round(summary(xtabs(formula = recurrence ~ breast.quad + tumor.cd,data = data))$p.value, 3)
+
+test[6,6]<-round(summary(xtabs(formula = recurrence ~ breast.quad + irradiation,data = data))$p.value, 3)
+test[7,6]<-round(summary(xtabs(formula = recurrence ~ breast.quad + tumor.cd,data = data))$p.value, 3)
+
+# irradiation
+test[6,7]<- c("-")
+test[6,8]<-round(summary(xtabs(formula = recurrence ~ irradiation + tumor.cd,data = data))$p.value, 3)
+
+test[7,7]<-round(summary(xtabs(formula = recurrence ~ irradiation + tumor.cd,data = data))$p.value, 3)
+
+test[7,8]<- c("-")
+
+```
+
+The below code shows the performed hypothesis test using xtabs function in R.
+```{r}
+test[1,3]<-round(summary(xtabs(formula = recurrence ~ menopause + node.caps,data = data))$p.value, 3)
+test[1,3]
+```
+
+```{r}
+test %>%
+  knitr::kable(caption = "Figure 2: P-values for Hypothesis Test of independence between all features")
+
+```
+The test was performed between all the categorical features and the result is displayed in the figure above. It is observed that:  
+
+*	‘Breast’, ‘breast-quad’ and ‘tumor-cd’ have high values of p-value (> 0.05) and thereby show no evidence of dependency with other features  
+*	‘Menopause’ shows dependency with ‘degree of malignancy’ and no dependency on any other feature  
+*	‘Node-caps’ show dependency on ‘degree of malignancy’ and ‘irradiation’  
+*	Most of the features do not show dependency with other features    
+
+
+## 2.1.	Model Fitting  
+In this section, our aim is to build a set of models. Since the domain knowledge on the interaction between the features is not comprehensive, all interactions would be examined.   
+    
+### 2.1.1 Manual Method  
+
+#### Model 1
+Implementation of first model, would consist of all the variables.  
+
+```{r}
+## Manual fitting model with all variables
+#Model1
+Manual.Model1 <- glm(formula = recurrence ~ ., family = binomial(link = logit),data = data)
+summary(Manual.Model1)
+Anova(Manual.Model1)
+
+```
+The results of full response model for Recurrence suggests that inv nodes and degree of malignancy have a significant impact on the likelihood of recurrence. Furthermore, the Anova results supports our claim as it suggests that the above-mentioned variables (inv-nodes, degree of malignancy) have a very low P-value. However, as age, menopause, node caps, breast, breast quadrants, irradiation and tumor cd were observed to be statistically insignificant. In the next section, we would inspect the significance of each feature along with its first level interactions and rebuild the model. 
+
+#### Model 2  
+
+From our Hypothesis test of independence Fig 2, we observe the following:  
+
+* Node-caps shows dependency with degree of malignancy and irradiation.  
+* Degree of malignancy shows dependency with node-caps and menopause.  
+* Irradiation shows dependency with node-caps.  
+
+Taking the above points into account, in this section, we would build a model with all features along with their level 1 interactions
+
+```{r}
+## Manual fitting model with all variables and their first level interaction
+Manual.Model2 <- glm(formula = recurrence ~ .^2, family = binomial(link = logit),data = data)
+summary(Manual.Model2)
+Anova(Manual.Model2,test="LR")
+```
+
+Considering the results of response model for Recurrence using both methods, we observe that interactions **age: inv.nodes, age: node.caps, age: deg.malig, menopause: inv.nodes, menopause: deg.malig and node.caps: tumor.cd** are statistically significant, which suggests that the variables **age, node.caps, inv.nodes, deg.malig, menopause and tumor-cd** are individually statistically significant. However, it is evident that breast, breast quadrants and irradiation are statistically insignificant. In addition to this, it must be noted that, given the fact that age and inv-nodes are numeric with extremely low variance, log function has not been implemented.   
+
+In the next section, we would omit the variables which are statistically insignificant and rebuild a reduced model. 
+
+#### Manual Model 3: Reduced model
+
+```{r}
+## Manual fitting Reduced model variables and their first level interaction 
+Manual.Model3 <- glm(formula = recurrence ~ (age+node.caps+inv.nodes+deg.malig+menopause+tumor.cd)^2, family = binomial(link = logit),data = data)
+summary(Manual.Model3)
+Anova(Manual.Model3,test="LR")
+```
+Considering the results of reduced response model for Recurrence using both methods, we observe that interactions **age: inv.nodes, age: deg.malig, node.caps:inv.nodes, inv.nodes:menopause and menopause:tumor.cd** are statistically significant, which suggests that the variables **age, node.caps, inv.nodes, deg.malig, menopause and tumor-cd** are individually statistically significant. Additionally, it must be noted that this reduced model gave the lowest AIC.
+
+![](C:/Users/Archit/Desktop/1.png)
+
+### 2.1.2 Model Selection using Feature selection
+In this section our aim would be to build models by choosing those independent variables that are “important” rather than those that do not help estimate the response variable recurrence.
+
+#### 2.1.2.1 Glmulti – All subset Regression method
+
+The glmulti() function is used to search for the best main-effects model, given the fact that, we have 9 variables, so 2 power 9 = 512 models for only main effects, which itself is an oversized candidate set, thus, we use genetic search algorithm in this regard and weigh the credibility of the model with Information criteria as AIC. An extensive search for the model with the lowest AIC value would be performed.  
+
+![](C:/Users/Archit/Desktop/2.png)
+
+```{r, include=FALSE}
+
+# Glmulti (All SUbset Regression)
+set.seed(2)
+search.g.aic <- glmulti(y = recurrence ~ ., 
+                        data = data, 
+                        fitfunction = "glm", 
+                        level = 1, 
+                        method = "g", 
+                        crit = "aic", 
+                        family = binomial(link = "logit"))
+
+slotNames(search.g.aic)
+search.g.aic@formulas[[1]]
+```
+
+
+
+```{r, include=FALSE}
+
+aa <- weightable(search.g.aic)
+cbind(model = aa[1:5,1], round(aa[1:5,2:3], digits = 3))
+print(search.g.aic)
+
+
+plot(search.g.aic, type = "p")%>%
+  knitr::kable(caption = "Figure 3: Plot of IC profile for best models using glmulti method")
+
+glmulti.Model <- glm(formula = recurrence ~ 1 + inv.nodes + deg.malig,family = binomial(link = logit), data = data)
+
+```
+
+From Table 2, we infer that model recurrence ~ 1 + inv.nodes + deg.malig with a minimal AIC of 277.324 is the best model achieved using all subset regression method. IC Profile image for the model is displayed in figure 3. It shows the result for Information Criteria (AIC) obtained for the 100 models that were run. The best model found with (level taken as 1) has the lowest AIC as mentioned above. 
+
+![](C:/Users/Archit/Desktop/3.png)
+
+```{r}
+Anova(glmulti.Model)
+```
+
+A detailed analysis of the features performed using Anova is displayed above.  
+We observe that, all the variables (inv. nodes and deg.malig) in the model are statistically significant with extremely low P values.  
+
+#### 2.1.2.2 Stepwise Model Selection
+In this section, our aim is to determine the “best” model from a set of all possible models. For the purpose of this analysis, backward alternating selection method has been implemented, where in the ultimate goal of the procedure would be to obtain a model with the lowest AIC.    
+We start with creating an empty model with no variables, full model with all main effects and their interactions and another full model with all the main effects. Using this we build our backward alternating selection model.  
+
+##### Model 1  
+
+The backward alternating selection process is performed using empty model with no variables and full model with main effects. The list of models generated through the run along with their respective AIC values is displayed in table 3.
+![](C:/Users/Archit/Desktop/4.png)
+
+```{r, include=FALSE}
+
+###############
+
+# Stepwise Model Selection
+
+# first fit the smallest and largest models to be considered
+
+empty.mod <- glm(formula = recurrence ~ 1, family = binomial(link = logit), data = data)
+full.mod.main <- glm(formula = recurrence ~ ., family = binomial(link = logit), data = data)
+full.mod.int <- glm(formula = recurrence ~ .^2, family = binomial(link = logit), data = data)
+
+
+# backward alternating: (with main effects)
+back.alt.sel.main <- step(object = full.mod.main, 
+                      scope = list(upper = empty.mod), 
+                      direction = "both",
+                      k = 2, trace = TRUE)
+
+
+```
+```{r}
+Anova(back.alt.sel.main)
+# Step:  AIC=277.32
+# recurrence ~ `inv-nodes` + deg.malig
+```
+
+From Table 3, we infer that model recurrence ~ inv.nodes + deg.malig with a minimal AIC of 277.32 is the best model achieved using backward alternating method for main effects. 
+A detailed analysis of the features performed using Anova is displayed below
+
+
+We observe that, all the variables (inv. nodes and deg.malig) in the model are statistically significant with extremely low P values.  
+
+##### Model 2
+The backward alternating selection process is performed using empty model with no variables and full model with main effects and their interactions. The list of top 5 models generated through the run along with their respective AIC values is displayed in table 4.
+![](C:/Users/Archit/Desktop/5.png)
+
+From Table 4, we infer that model the topmost model with a minimal AIC of 264.72 is the best model achieved using backward alternating method for main effects with interactions. 
+A detailed analysis of the features performed using Anova is displayed below.
+
+```{r, include=FALSE}
+
+# backward alternating: (with interaction)
+back.alt.sel.int <- step(object = full.mod.int, 
+                     scope = list(upper = empty.mod), 
+                     direction = "both",
+                     k = 2, trace = TRUE)
+```
+```{r}
+Anova(back.alt.sel.int)
+# Step:  AIC=264.72
+# recurrence ~ age + menopause + inv.nodes + node.caps + deg.malig +
+#   breast + breast.quad + irradiation + tumor.cd + age:menopause +
+#   age:inv.nodes + age:node.caps + age:deg.malig + age:breast.quad +
+#   age:irradiation + age:tumor.cd + menopause:inv.nodes + menopause:node.caps +
+#   menopause:deg.malig + menopause:breast.quad + menopause:tumor.cd +
+#   inv.nodes:node.caps + node.caps:deg.malig + node.caps:breast +
+#   node.caps:breast.quad + node.caps:irradiation + node.caps:tumor.cd +
+#   breast:breast.quad + breast:irradiation
+
+```
+
+We observe that, almost all the interactions in the model are statistically significant with extremely low P values, which suggests that all the variables age, node.caps, inv.nodes, deg.malig, menopause, irradiation, tumor-cd, breast and breast quad are individually statistically significant.   
+
+## 2.2 Model Evaluation
+As per the model building strategy, the following models were chosen for further evaluation:    
+
+**Manual Model (AIC = 277.1)**  
+
+*recurrence ~ (age + node.caps + inv.nodes + deg.malig + menopause + tumor.cd)^2 *   
+
+**GLmulti Model (AIC = 277.3)**    
+
+*recurrence ~ 1 + inv.nodes + deg.malig*  
+
+**Backward Alternating Stepwise Selection (AIC = 264.7)**    
+
+*recurrence ~ age + menopause + inv.nodes + node.caps + deg.malig + breast + breast.quad + irradiation + tumor.cd + age:menopause + age:inv.nodes + age:node.caps + age:deg.malig + age:breast.quad + age:irradiation + age:tumor.cd + menopause:inv.nodes + menopause:node.caps + menopause:deg.malig + menopause:breast.quad + menopause:tumor.cd + inv.nodes:node.caps + node.caps:deg.malig + node.caps:breast + node.caps:breast.quad + node.caps:irradiation + node.caps:tumor.cd + breast:breast.quad + breast:irradiation*
+
+
+```{r, include=FALSE}
+#####################################################################
+##  Model Evaluation
+#####################################################################
+
+manual_mod3_pred <- data[9,c(1,2,3,4,5,9)]
+manual_model3_prob <- predict(object = Manual.Model3, newdata = manual_mod3_pred,type = "response") * 100
+cat("Manual.Model3 Probability of recurrence:", round(manual_model3_prob, 3), "%")
+
+
+glmulti_pred <- data[9,c(3,5)]
+glmulti_prob <- predict(object = glmulti.Model, newdata = glmulti_pred,type = "response") * 100
+cat("glmulti.Model Probability of recurrence:", round(glmulti_prob, 3), "%")
+
+
+bkwrd_alt_pred <- data[9,1:9]
+bkwrd_alt_prob <- predict(object = back.alt.sel.int, newdata = bkwrd_alt_pred,type = "response") * 100
+cat("back.alt.sel Probability of recurrence:", round(bkwrd_alt_prob, 3), "%")
+
+```
+
+```{r, include=FALSE}
+# Find the observed proportion of successes
+w <- aggregate(formula = recurrence ~ age + menopause + inv.nodes + node.caps + deg.malig + 
+                 breast + breast.quad + irradiation + tumor.cd, data = data, FUN = sum)
+
+n <- aggregate(formula = recurrence ~ age + menopause + inv.nodes + node.caps + deg.malig + 
+                 breast + breast.quad + irradiation + tumor.cd, data = data, FUN = length)
+w.n <- data.frame(w, trials = n$recurrence, prop = round(w$recurrence/n$recurrence,3))
+head(w.n)
+tail(w.n)
+nrow(w.n)  # Number of EVPs
+sum(w.n$trials)  # Number of observations
+
+# Verify model fit to EVP data matches the model fit to the binary response data format
+mod.bkwrd.elim <- glm(formula = recurrence/trials ~ age + menopause + inv.nodes + node.caps + deg.malig +
+                     breast + breast.quad + irradiation + tumor.cd + age:menopause +
+                     age:inv.nodes + age:node.caps + age:deg.malig + age:breast.quad +
+                     age:irradiation + age:tumor.cd + menopause:inv.nodes +
+                     menopause:node.caps + menopause:deg.malig + menopause:breast.quad +
+                     menopause:tumor.cd + inv.nodes:node.caps + node.caps:deg.malig +
+                     node.caps:breast + node.caps:breast.quad + node.caps:irradiation +
+                     node.caps:tumor.cd + breast:breast.quad + breast:irradiation, family = binomial(link = logit), data = w.n, weights = trials)
+round(summary(mod.bkwrd.elim)$coefficients, digits = 4)
+Anova(mod.bkwrd.elim)
+summary(mod.bkwrd.elim)
+```
+
+### 2.2.1 Comparing Predictions of Candidate Models
+The first step for model evaluation involved predicting the recurrence of breast tumor using an existing observation from the dataset. Hence, observation #9 was chosen for predictions as shown below:  
+
+* Age = 30  
+* Menopause = premenopausal [1]  
+* INV Nodes = 2  
+* Node Caps = No [1]  
+* Degree of Malignancy = Grade3: High [3]  
+* Breast = Left [1]  
+* Breast Quadrant = left-lower [2]  
+* Irradiation = No [1]  
+* Tumor CD = Tumor Size > Mean (N) [2]  
+* Recurrence = Recurrence [0]  
+
+This observation was tested with the best models shortlisted from the model building strategy. Below are the results for the 3 candidate models:  
+
+* Manual Model: Probability of recurrence = 63.513 %  
+* GLmulti Model: Probability of recurrence = 45.188 %  
+* Backward Alternating Model: Probability of recurrence = 78.023 %  
+
+The actual response in the dataset for the concerned observation was “recurrence”. Hence, the best model from backward alternating stepwise selection had the most accurate prediction of 78.023% for recurrence of breast tumor. For further checks, the original dataset was converted into an explanatory variable pattern format. A total of 254 EVPs were obtained from the 261 observations.  
+
+### 2.2.2 Residual Analysis  
+The model obtained from backward alternating stepwise selection was observed to have the least AIC and predicted with the best accuracy amongst all the candidate models. Using this model with the EVP format of data, the standardized Pearson residuals were obtained against Age and INV Nodes.  
+
+
+```{r, warning=FALSE}
+
+# Standardized residuals vs. degree of malignancy & inv nodes
+
+stand.resid <- rstandard(model = mod.bkwrd.elim, type = "pearson")
+par(mfrow=c(1,2))
+plot(x = w.n$age, y = stand.resid, ylim = c(min(-3, stand.resid),max(3, stand.resid)), ylab = "Standardized Pearson residuals", xlab = "Age")
+abline(h = c(3, 2, 0, -2, -3), lty = "dotted", col = "blue")
+ord.dist1 <- order(w.n$age)
+smooth.stand1 <- loess(formula = stand.resid ~ age, data = w.n, weights = trials)
+lines(x = w.n$age[ord.dist1], y = predict(smooth.stand1)[ord.dist1], lty = "solid", col = "red")
+
+boxplot(x = w.n$inv.nodes, y = stand.resid, ylim = c(min(-3, stand.resid),max(3, stand.resid)), ylab = "Standardized Pearson residuals", xlab = "INV Nodes")
+abline(h = c(3, 2, 0, -2, -3), lty = "dotted", col = "blue")
+ord.dist2 <- order(w.n$inv.nodes)
+smooth.stand2 <- loess(formula = stand.resid ~ inv.nodes, data = w.n, weights = trials)
+lines(x = w.n$inv.nodes[ord.dist2], y = predict(smooth.stand2)[ord.dist2], lty = "solid", col = "red")
+
+```
+
+In the plot above, for Age vs. Standard Pearson Residuals, it was observed that majority of observations lied between the ±2 range. A few outliers were found between the ±2 and ±3 bands. Furthermore, some more outliers were located outside the ±3 range.
+The boxplot of INV Nodes vs. Standard Pearson Residuals showed a similar behavior with regards to the presence of outliers. On the brighter side, the boxplot was heavily concentrated between 0 and +2. The two graphs discussed above convey that the model is plagued with a few outliers.
+
+
+### 2.2.3 Response Analysis
+To understand the impact of a crucial predictor on the response variable, a stacked bar graph was obtained for degree of malignancy vs. Recurrence.
+
+
+```{r}
+#Response Analysis
+counts <- table(data$recurrence, data$deg.malig)
+par(mfrow=c(1,1))
+barplot(counts, main="Figure 5: Stacked bar graph degree of malignancy vs. Recurrence",
+        xlab="Degree of Malignancy", col=c("darkblue","red"),
+        legend = rownames(counts))
+```
+
+From Figure 5, it was observed that breast tumor cases with 1st (low) and 2nd (medium) degree of malignancy were less likely to develop a recurring tumor. On the contrary, patients with a history of 3rd degree malignancy were more likely to develop a recurring breast tumor.  
+
+
+### 2.2.4 Goodness of Fit  
+This crucial step was performed to gauge and compare the performance of all the candidate models. The residual deviance and degree of freedom were calculated for each model. Next, the ±2 and ±3 thresholds were defined using each model’s degree of freedom. Finally, the GOF measure was calculated by dividing residual deviance of each model by its corresponding degrees of freedom. Below Table 5 displays the results:
+
+```{r, include=FALSE}
+
+# Goodness-of-Fit Tests
+Manual.Model3.rdev <- Manual.Model3$deviance 
+glmulti.Model.rdev <- glmulti.Model$deviance 
+bkwrd.sel.Model.rdev <- back.alt.sel.int$deviance 
+
+Manual.Model3.dfr <- Manual.Model3$df.residual 
+glmulti.Model.dfr <- glmulti.Model$df.residual 
+bkwrd.sel.Model.dfr <- back.alt.sel.int$df.residual 
+
+Manual.Model3.ddf <- Manual.Model3.rdev / Manual.Model3.dfr
+glmulti.Model.ddf <- glmulti.Model.rdev / glmulti.Model.dfr
+bkwrd.sel.Model.ddf <- bkwrd.sel.Model.rdev / bkwrd.sel.Model.dfr
+
+Manual.Model3.thresh2 <- 1 + 2*sqrt(2/Manual.Model3.dfr)
+Manual.Model3.thresh3 <- 1 + 3*sqrt(2/Manual.Model3.dfr)
+
+glmulti.Model.thresh2 <- 1 + 2*sqrt(2/glmulti.Model.dfr) 
+glmulti.Model.thresh3 <- 1 + 3*sqrt(2/glmulti.Model.dfr)
+
+bkwrd.sel.Model.thresh2 <- 1 + 2*sqrt(2/bkwrd.sel.Model.dfr) 
+bkwrd.sel.Model.thresh3 <- 1 + 3*sqrt(2/bkwrd.sel.Model.dfr) 
+
+c(Manual.Model3.rdev, Manual.Model3.dfr, Manual.Model3.ddf, Manual.Model3.thresh2, Manual.Model3.thresh3)
+c(glmulti.Model.rdev, glmulti.Model.dfr, glmulti.Model.ddf, glmulti.Model.thresh2, glmulti.Model.thresh3)
+c(bkwrd.sel.Model.rdev, bkwrd.sel.Model.dfr, bkwrd.sel.Model.ddf, bkwrd.sel.Model.thresh2, bkwrd.sel.Model.thresh3)
+
+```
+![](C:/Users/Archit/Desktop/6.png)
+
+The GOF measure should be close to 1 for a good model. The GOF measure of Manual model was the closest to 1, followed by GLMulti and Backward Alternating. However, the lowest AIC was observed for Backward Alternating stepwise selection model, along accurate prediction and a GOF measure close to 1. Hence, the model obtained from backward alternating selection was chosen for further analysis.
+
+
+### 2.2.5 Confidence Intervals  
+The backward alternating model was selected for computing probability and its respective confidence interval for the dataset. The prediction for recurrence was obtained using observation #9 as mentioned in one of the previous sections. The value for alpha was chosen as 0.5.   
+From the prediction, the fitted value and standard deviation (SE) were computed as 1.267 and 1.007, respectively. These values were substituted in the following formula for calculating the probability (pi.hat) of recurrence for the chosen observation:
+
+![](C:/Users/Archit/Desktop/7.png)  
+As per the result, there was a 78% probability of a person with those features developing a recurring breast tumor. Similarly, the Wald confidence interval was calculated as:
+
+![](C:/Users/Archit/Desktop/8.png)
+
+
+The following results were obtained and displayed in Table 6:
+![](C:/Users/Archit/Desktop/9.png)
+
+```{r, include=FALSE}
+#Coefficients and CI of Final Model
+Anova(back.alt.sel.int)
+back.alt.sel.int$coefficients
+bkwrd_alt_pred <- data[9,1:9]
+alpha<-0.05
+linear.pred<-predict(object = back.alt.sel.int, newdata = bkwrd_alt_pred, type = "link", se = TRUE)
+linear.pred$fit
+linear.pred$se.fit
+linear.pred$residual.scale
+pi.hat<-exp(linear.pred$fit) / (1 + exp(linear.pred$fit))
+CI.lin.pred<-linear.pred$fit + qnorm(p = c(alpha/2, 1-alpha/2))*linear.pred$se
+CI.pi<-exp(CI.lin.pred)/(1+exp(CI.lin.pred))
+CI.pi
+data.frame(bkwrd_alt_pred, pi.hat, lower = CI.pi[1],upper = CI.pi[2])
+
+```
+### 2.2.6 Hypothesis Tests
+Below Table 7, displays the summary statistics for the chosen model:
+![](C:/Users/Archit/Desktop/10.png)
+
+Looking at Table 7, the summary of the Anova() function, the p-value is observed obtained from the LRT information. LRT usually outperforms Wald’s test and therefore the focus is to look at the LRT information. 
+Here, interpretation for ‘breast:irradiation’ i.e. β29 for the hypothesis test is taken. The test of H0: β29 = 0 and HA ≠ 0 is observed from the Anova() output. The p-value is less 0.05 i.e. the null hypothesis is rejected, and the test is significant. Thus, at 95% confidence interval it can be said that there is evidence of breast and irradiation interaction. 
+
+
+### 2.2.7 Sensitivity Analysis
+In order to perform sensitivity analysis on the chosen model, the odds ratio was calculated. Due to the presence of 9 main effects and 20 interactions, the focus of this analysis was narrowed down to INV Nodes. The approach can be extrapolated for other variables in the model.  
+INV Nodes contain information regarding the number of metastatic axillary lymph nodes observed in histological examination of each patient. This count data varies from 0 to 7, and the motive behind the analysis was to understand the change in odds for a unit change in number of metastatic axillary lymph nodes.   
+As per the model equation, INV Nodes is present as main effect, apart from interacting with Age, Menopause and Node Caps. Due to these interactions, the odds ratio for a unit change in INV Nodes was calculated using the following: (c = 1 unit)
+
+
+![](C:/Users/Archit/Desktop/11.png)
+
+
+where,
+beta.hat[1] = coefficient of INV Nodes as main effect in the chosen model  
+beta.hat[2] = coefficient of INV Nodes interacting with age in the chosen model  
+beta.hat[3] = coefficient of INV Nodes interacting with menopause in the chosen model  
+beta.hat[2] = coefficient of INV Nodes interacting with node caps in the chosen model  
+
+ 
+The above OR equation was used for finding odds ratios for 5 random observations in the dataset, results of which are displayed in Table 8.
+
+![](C:/Users/Archit/Desktop/12.png)
+
+```{r, include=FALSE}
+# Sensitivity Analysis
+beta.hat<-back.alt.sel.int$coefficients[c(4,12,18,23)]  
+c<-1
+age<- data[5:9,1] 
+menopause<- data[5:9,2]
+node.caps<- data[5:9,4]
+OR.inv.nodes<-exp(c*(beta.hat[1] + beta.hat[2]*age + beta.hat[3]*menopause + beta.hat[4]*node.caps))  # Estimated OR
+OR.inv.nodes
+round(data.frame(age = age,
+                 menopause = menopause,
+                 node.caps=node.caps,
+                 OR = OR.inv.nodes),2)
+
+```
+
+
+* Consider the third observation – a 60 years-old patient, having undergone menopause after 40 years and having no node caps:  
+  + For a unit increase in number of metastatic axillary lymph nodes in such a patient, the odds of recurring breast tumor would increase by 1.78.   
+* On the contrary, consider the 5th observation - a premenopausal 30 years-old patient, having no node caps:  
+  + For a unit increase in number of metastatic axillary lymph nodes in such a patient, the odds of recurring breast tumor would increase by 7.09.  
+ 
+ 
+# 3.Critique & Limitations
+
+
+* Size of dataset – The dataset had just over 250 observations. A larger dataset usually helps achieve a more robust predictive model.    
+* Handling of Categorical Predictors – The predictors were converted to a numerical format for model building and subsequent evaluation. This was done to perform logistic regression. A different approach could have involved splitting the categorical predictors with more than 2 levels for analysis. This approach might help with maintaining the ordinality of features.  
+* Exhaustive GLMulti Modelling - In this investigation, genetic search with level 1 (only main interactions included) was used for modelling with GLMulti. A different approach could involve introduction of interactions and/or performing an exhaustive search for finding suitable candidate models.  
+* Precision/Recall - The predictive power of the model could not be tested using accuracy, precision and recall. These additional measures offer a holistic approach towards finding the right model for prediction. A train-test approach can be followed, wherein the model is trained on a train dataset. After performing logistic regression, the candidate models can then be checked for accuracy using the test dataset.   
+
+# 4.	Summary & Conclusions
+
+A dataset containing medical details of 261 females diagnosed with breast tumor was assessed to build to logistic regression model for predicting the recurrence of the disease. First, the dataset was cleaned and pre-processed to get rid of noise and erroneous values.  The resulting data, containing 9 predictors and 1 response, was visualized to understand their impact on one another.   
+
+Based on the first stage of analysis, it could be said that there were many factors that may influence the reappearance of the breast tumor. The degree of malignancy, receiving of radiation therapy and menopause can have relation to the likelihood of breast tumor recuring. Below are the key takeaways from the visualization:  
+
+*	The age of majority of the patients at the time of diagnosis ranged from approximately 30 to 75, and most of the breast cancers were diagnosed in the age bracket of 50 to 55.  
+*	Approximately 80% of the patients did not opt for radiation therapy, while nearly just 20% of them claimed to have received it.    
+*	The average age of patients with tumor size (P) and tumor size (N) is nearly the same. And the distribution of age is wider in case of Tumor size (P) incomparison to Tumor size (N).  
+* For all cases where cancer did metastasized to lymph node from the lower right quadrant of breast,recurrence cases were observed.  
+
+In Phase 2, the dataset, which is a mix of count and categorical predictors, was converted to a numeric format for performing logistic regression. A binomial distribution was assumed, hypothesis test for independence was performed. Most of the predictors were found to be independent.  
+
+In model building, 3 different approaches were utilized for finding candidate models. Manual, GLmulti and backward alternating stepwise selection were performed to find 3 best models according to the lowest AIC score. The AIC scores from the 3 candidate models are shown below:  
+
+* Manual Model – 277.1  
+* GLMulti – 277.3  
+* Backward Alternating Stepwise Selection – 264.7 
+
+These models were used for prediction, wherein backward alternating stepwise selection returned the best prediction. The Pearson Standardized residual analysis confirmed that the backward alternating model was a decent model, with a few outlier observations.
+  
+Next, the Goodness of Fit test was conducted. The GOF measure of Manual model was the closest to 1, followed by GLMulti and Backward Alternating. However, the lowest AIC was observed for Backward Alternating stepwise selection model, along accurate prediction and a GOF measure close to 1. Hence, the model obtained from backward alternating selection was chosen for further analysis.  
+
+The chosen model is given by the following equation:  
+**logit(pi) = exp(link)**  
+
+where, **link** = 28.58190203*(Intercept)-0.97614381*age+4.39611159*menopause+3.87427235*inv.nodes-16.21917957*node.caps-7.21163772*deg.malig+7.16984349*breast-2.08568138*breast.quad-3.25972981*irradiation+4.75189242*tumor.cd+0.11801148*age:menopause-0.09208782*age:inv.nodes+0.30330935*age:node.caps+0.11233463*age:deg.malig+0.0456061*age:breast.quad+0.07419307*age:irradiation+0.08162175*age:tumor.cd+1.38291966*menopause:inv.nodes-2.91687998*menopause:node.caps-1.39768537*menopause:deg.malig-0.82966183*menopause:breast.quad-2.38844187*menopause:tumor.cd-0.53566611*inv.nodes:node.caps+4.20295285*node.caps:deg.malig-3.43070364*node.caps:breast+1.81843696*node.caps:breast.quad+2.41369489*node.caps:irradiation-4.51367151*node.caps:tumor.cd-0.52068158*breast:breast.quad-1.95597623*breast:irradiation
+
+This model was further used for prediction, calculation of subsequent confidence intervals, and odds ratio.  
+
+ 
